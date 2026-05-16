@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-import { PDFParse } from 'pdf-parse'
+// @ts-expect-error pdf-parse lacks type declarations
+import pdfParse from 'pdf-parse/lib/pdf-parse.js'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -16,9 +17,7 @@ export async function POST(request: NextRequest) {
     if (!file) return NextResponse.json({ error: 'No file' }, { status: 400 })
 
     const buffer = Buffer.from(await file.arrayBuffer())
-    const parser = new PDFParse({ data: buffer })
-    const parsed = await parser.getText()
-    await parser.destroy()
+    const parsed = await pdfParse(buffer)
     const resumeText = parsed.text
 
     const extraction = await anthropic.messages.create({
