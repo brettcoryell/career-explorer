@@ -61,7 +61,7 @@ Return JSON only:
 
 async function extractJobSignals(jobs: Array<{ id: string; description: string }>) {
   if (!jobs.length) return []
-  const jobsText = jobs.map((j, i) => `JOB_ID:${j.id}\nDESCRIPTION:\n${j.description?.slice(0, 1000)}`).join('\n\n---\n\n')
+  const jobsText = jobs.map((j) => `JOB_ID:${j.id}\nDESCRIPTION:\n${j.description?.slice(0, 1000)}`).join('\n\n---\n\n')
 
   const response = await anthropic.messages.create({
     model: 'claude-sonnet-4-6',

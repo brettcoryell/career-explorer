@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
-// @ts-ignore
+// @ts-expect-error pdf-parse lacks type declarations
 import pdfParse from 'pdf-parse'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })

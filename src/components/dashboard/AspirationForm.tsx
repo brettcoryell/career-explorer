@@ -49,7 +49,7 @@ export default function AspirationForm({ profileId, onComplete }: AspirationForm
         Where do you want your career to go? What kind of work excites you?
       </p>
       <p className="text-slate-500 text-xs mb-4 italic">
-        e.g. "I want to move into engineering leadership at a growth-stage startup, ideally in climate tech or developer tooling. I'm passionate about building high-performing teams."
+        e.g. &ldquo;I want to move into engineering leadership at a growth-stage startup, ideally in climate tech or developer tooling. I&apos;m passionate about building high-performing teams.&rdquo;
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-3">

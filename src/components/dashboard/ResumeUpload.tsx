@@ -4,11 +4,11 @@ import { useState, useRef } from 'react'
 import { CareerProfile } from '@/lib/types'
 
 interface ResumeUploadProps {
-  profileId: string | null
+  profileId: string | null  // reserved for future use (Stage 2+ re-upload)
   onComplete: (profile: CareerProfile) => void
 }
 
-export default function ResumeUpload({ profileId, onComplete }: ResumeUploadProps) {
+export default function ResumeUpload({ onComplete }: ResumeUploadProps) {
   const [file, setFile] = useState<File | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -70,7 +70,7 @@ export default function ResumeUpload({ profileId, onComplete }: ResumeUploadProp
     <div>
       <h3 className="text-slate-100 font-semibold mb-1">Upload Your Resume</h3>
       <p className="text-slate-400 text-sm mb-4">
-        We'll extract your skills, experience, and background automatically.
+        We&apos;ll extract your skills, experience, and background automatically.
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-3">

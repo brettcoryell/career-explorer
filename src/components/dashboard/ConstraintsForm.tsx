@@ -46,10 +46,10 @@ export default function ConstraintsForm({ profileId, onComplete }: ConstraintsFo
     <div>
       <h3 className="text-slate-100 font-semibold mb-1">Your Hard Constraints</h3>
       <p className="text-slate-400 text-sm mb-1">
-        Tell us what you absolutely won't accept in your next role.
+        Tell us what you absolutely won&apos;t accept in your next role.
       </p>
       <p className="text-slate-500 text-xs mb-4 italic">
-        e.g. "No finance or oil & gas, must be fully remote, no agencies, no relocating to NYC"
+        e.g. &ldquo;No finance or oil &amp; gas, must be fully remote, no agencies, no relocating to NYC&rdquo;
       </p>
 
       <form onSubmit={handleSubmit} className="space-y-3">
