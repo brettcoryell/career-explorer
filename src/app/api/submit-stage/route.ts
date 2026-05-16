@@ -166,6 +166,7 @@ function normalizeAdzunaJob(job: Record<string, unknown>, profileId: string) {
 }
 
 export async function POST(request: NextRequest) {
+  try {
   const supabase = createServiceClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -351,4 +352,11 @@ export async function POST(request: NextRequest) {
   }
 
   return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
+  } catch (err) {
+    console.error('[submit-stage]', err)
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Internal server error' },
+      { status: 500 }
+    )
+  }
 }

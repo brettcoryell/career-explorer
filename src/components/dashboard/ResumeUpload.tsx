@@ -59,8 +59,9 @@ export default function ResumeUpload({ onComplete }: ResumeUploadProps) {
       }
 
       onComplete(data.profile as CareerProfile)
-    } catch {
-      setError('Network error. Please try again.')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      setError(`Network error: ${msg}`)
     } finally {
       setLoading(false)
     }
