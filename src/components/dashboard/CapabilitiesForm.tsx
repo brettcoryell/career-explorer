@@ -64,6 +64,11 @@ export default function CapabilitiesForm({ profileId, onComplete }: Capabilities
       >
         {loading ? 'Generating match analysis…' : 'Unlock Full Matches →'}
       </button>
+      {loading && (
+        <p className="text-xs text-slate-400 text-center">
+          Scoring all your matches and generating summaries — this takes a couple of minutes.
+        </p>
+      )}
     </form>
   )
 }

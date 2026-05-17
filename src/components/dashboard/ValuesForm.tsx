@@ -67,6 +67,11 @@ export default function ValuesForm({ profileId, onComplete, onLoadingChange }: V
       >
         Find Value-Aligned Jobs →
       </button>
+      {loading && (
+        <p className="text-xs text-slate-400 text-center">
+          Searching job boards for value-aligned matches — this takes a couple of minutes.
+        </p>
+      )}
     </form>
   )
 }

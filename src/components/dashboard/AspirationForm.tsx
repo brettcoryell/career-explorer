@@ -94,6 +94,12 @@ export default function AspirationForm({ profileId, onComplete, onLoadingChange 
           </svg>
           Find Matching Jobs
         </button>
+
+        {loading && (
+          <p className="text-xs text-slate-400 text-center mt-2">
+            Searching Remotive and Adzuna for matches — this takes a minute or two.
+          </p>
+        )}
       </form>
     </div>
   )
