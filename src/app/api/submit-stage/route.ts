@@ -427,18 +427,17 @@ async function extractAndUpdateSignals(
 
   if (!newJobs?.length) return
 
-  for (let i = 0; i < newJobs.length; i += 10) {
-    const batch = newJobs.slice(i, i + 10)
-    const batchSignals = await extractJobSignals(batch)
-    for (const sig of batchSignals) {
-      if (sig.id) {
-        await supabase
-          .from('job_postings')
-          .update({ signals: sig })
-          .eq('id', sig.id)
-      }
-    }
-  }
+  // Build batches then extract all in parallel (Claude rate limits are generous)
+  const batches: Array<Array<{ id: string; description: string }>> = []
+  for (let i = 0; i < newJobs.length; i += 10) batches.push(newJobs.slice(i, i + 10))
+
+  const allSignals = (await Promise.all(batches.map(b => extractJobSignals(b)))).flat()
+
+  await Promise.all(
+    allSignals
+      .filter(sig => !!sig.id)
+      .map(sig => supabase.from('job_postings').update({ signals: sig }).eq('id', sig.id))
+  )
 }
 
 async function rescoreAllJobs(
@@ -452,37 +451,26 @@ async function rescoreAllJobs(
     .select('id, signals')
     .eq('profile_id', profileId)
 
-  const scoreEventRows: Array<{
-    profile_id: string; job_id: string; stage_scored: number
-    raw_score: number; normalized_score: number; fit_tier: string
-    signals_fired: string[]; penalties_fired: string[]
-    confidence_snapshot: Partial<SignalConfidence>
-  }> = []
+  const scoredJobs = (allJobs || []).filter(
+    job => job.signals && Object.keys(job.signals).length > 0
+  )
 
-  for (const job of allJobs || []) {
-    if (!job.signals || Object.keys(job.signals).length === 0) continue
-    const { raw, normalized, reasons, penalties } = scoreJob(
-      job.signals as JobSignals,
-      updatedPref
-    )
-    const tier = assignTier(normalized)
-    await supabase
-      .from('job_postings')
-      .update({ fit_score: normalized, fit_tier: tier, fit_reasons: reasons, fit_penalties: penalties })
-      .eq('id', job.id)
-
-    scoreEventRows.push({
-      profile_id: profileId,
-      job_id: job.id,
-      stage_scored: stage,
-      raw_score: raw,
-      normalized_score: normalized,
-      fit_tier: tier,
-      signals_fired: reasons.map(r => r.label),
-      penalties_fired: penalties.map(p => p.label),
-      confidence_snapshot: updatedPref.signal_confidence || {},
+  const scoreEventRows = await Promise.all(
+    scoredJobs.map(async job => {
+      const { raw, normalized, reasons, penalties } = scoreJob(job.signals as JobSignals, updatedPref)
+      const tier = assignTier(normalized)
+      await supabase
+        .from('job_postings')
+        .update({ fit_score: normalized, fit_tier: tier, fit_reasons: reasons, fit_penalties: penalties })
+        .eq('id', job.id)
+      return {
+        profile_id: profileId, job_id: job.id, stage_scored: stage,
+        raw_score: raw, normalized_score: normalized, fit_tier: tier,
+        signals_fired: reasons.map(r => r.label), penalties_fired: penalties.map(p => p.label),
+        confidence_snapshot: updatedPref.signal_confidence || {},
+      }
     })
-  }
+  )
 
   if (scoreEventRows.length > 0) {
     await supabase.from('score_events').insert(scoreEventRows)
@@ -644,8 +632,8 @@ export async function POST(request: NextRequest) {
 
       const allRawJobs: Array<ReturnType<typeof normalizeJSearchJob> | ReturnType<typeof normalizeAdzunaJob>> = []
       let jSearchHadError = false
-      for (const q of jSearchQueries) {
-        const { jobs, hadError } = await fetchJSearch(q)
+      const jSearchResults = await Promise.all(jSearchQueries.map(q => fetchJSearch(q)))
+      for (const { jobs, hadError } of jSearchResults) {
         if (hadError) jSearchHadError = true
         for (const j of jobs) allRawJobs.push(normalizeJSearchJob(j, profileId, 'main', 4))
       }
@@ -653,8 +641,8 @@ export async function POST(request: NextRequest) {
       // If JSearch returned nothing (subscription inactive or error), fall back to Adzuna
       if (allRawJobs.length === 0) {
         console.log('[submit-stage] Stage 4 JSearch fallback → Adzuna')
-        for (const q of jSearchQueries.slice(0, 2)) {
-          const jobs = await fetchAdzuna(q)
+        const adzunaResults = await Promise.all(jSearchQueries.slice(0, 2).map(q => fetchAdzuna(q)))
+        for (const jobs of adzunaResults) {
           for (const j of jobs) allRawJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId, 'main', 4))
         }
       }
@@ -720,17 +708,15 @@ export async function POST(request: NextRequest) {
         .eq('source_type', 'main')
 
       if (allJobsForSummary && allJobsForSummary.length > 0) {
-        // Batch into groups of 20 to avoid token limits
-        for (let i = 0; i < allJobsForSummary.length; i += 20) {
-          const batch = allJobsForSummary.slice(i, i + 20)
-          const summaries = await generateFitSummaries(batch, updatedPref)
-          for (const [jobId, summary] of Object.entries(summaries)) {
-            await supabase
-              .from('job_postings')
-              .update({ fit_summary: summary })
-              .eq('id', jobId)
-          }
-        }
+        const summaryBatches: typeof allJobsForSummary[] = []
+        for (let i = 0; i < allJobsForSummary.length; i += 20) summaryBatches.push(allJobsForSummary.slice(i, i + 20))
+        const allSummaries = await Promise.all(summaryBatches.map(b => generateFitSummaries(b, updatedPref)))
+        const merged = Object.assign({}, ...allSummaries)
+        await Promise.all(
+          Object.entries(merged).map(([jobId, summary]) =>
+            supabase.from('job_postings').update({ fit_summary: summary }).eq('id', jobId)
+          )
+        )
       }
 
       const schemaWarning = !!capSignals.schema_fit_warning
@@ -779,13 +765,15 @@ export async function POST(request: NextRequest) {
         .eq('source_type', 'main')
 
       if (allJobsForSummary && allJobsForSummary.length > 0) {
-        for (let i = 0; i < allJobsForSummary.length; i += 20) {
-          const batch = allJobsForSummary.slice(i, i + 20)
-          const summaries = await generateFitSummaries(batch, updatedPref)
-          for (const [jobId, summary] of Object.entries(summaries)) {
-            await supabase.from('job_postings').update({ fit_summary: summary }).eq('id', jobId)
-          }
-        }
+        const summaryBatches: typeof allJobsForSummary[] = []
+        for (let i = 0; i < allJobsForSummary.length; i += 20) summaryBatches.push(allJobsForSummary.slice(i, i + 20))
+        const allSummaries = await Promise.all(summaryBatches.map(b => generateFitSummaries(b, updatedPref)))
+        const merged = Object.assign({}, ...allSummaries)
+        await Promise.all(
+          Object.entries(merged).map(([jobId, summary]) =>
+            supabase.from('job_postings').update({ fit_summary: summary }).eq('id', jobId)
+          )
+        )
       }
 
       const schemaWarning = !!starSignals.schema_fit_warning
@@ -839,15 +827,15 @@ export async function POST(request: NextRequest) {
       console.log('[submit-stage] Stage 7 adjacent search terms:', adjTerms)
 
       const allAdjacentJobs: Array<ReturnType<typeof normalizeJSearchJob> | ReturnType<typeof normalizeAdzunaJob>> = []
-      for (const term of adjTerms) {
-        const { jobs } = await fetchJSearch(term)
+      const adjResults = await Promise.all(adjTerms.map(t => fetchJSearch(t)))
+      for (const { jobs } of adjResults) {
         for (const j of jobs) allAdjacentJobs.push(normalizeJSearchJob(j, profileId, 'adjacent', 7))
       }
 
       if (allAdjacentJobs.length === 0) {
         console.log('[submit-stage] Stage 7 JSearch fallback → Adzuna for adjacent')
-        for (const term of adjTerms.slice(0, 2)) {
-          const jobs = await fetchAdzuna(sanitizeForAdzuna7(term))
+        const adjAdzunaResults = await Promise.all(adjTerms.slice(0, 2).map(t => fetchAdzuna(sanitizeForAdzuna7(t))))
+        for (const jobs of adjAdzunaResults) {
           for (const j of jobs) allAdjacentJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId, 'adjacent', 7))
         }
       }
