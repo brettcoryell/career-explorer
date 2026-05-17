@@ -170,7 +170,7 @@ export default function JobCard({ job, stageCompleted, onIgnore, onRestore }: Jo
         )}
       </div>
 
-      {/* Title */}
+      {/* Title — clickable link once unlocked */}
       <div className="mb-2">
         {!isUnlocked ? (
           <div
@@ -182,9 +182,14 @@ export default function JobCard({ job, stageCompleted, onIgnore, onRestore }: Jo
             </h3>
           </div>
         ) : (
-          <h3 className="text-base font-semibold text-slate-100 group-hover:text-amber-400 transition-colors">
+          <a
+            href={job.url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block text-base font-semibold text-slate-100 hover:text-amber-400 transition-colors"
+          >
             {job.title}
-          </h3>
+          </a>
         )}
       </div>
 
@@ -211,6 +216,14 @@ export default function JobCard({ job, stageCompleted, onIgnore, onRestore }: Jo
           <>
             <span className="text-slate-700">·</span>
             <span className="text-slate-400 text-xs font-mono">{salary}</span>
+          </>
+        )}
+        {job.posted_at && (
+          <>
+            <span className="text-slate-700">·</span>
+            <span className="text-slate-400 text-xs font-mono">
+              Posted: {new Date(job.posted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </span>
           </>
         )}
       </div>
@@ -258,51 +271,29 @@ export default function JobCard({ job, stageCompleted, onIgnore, onRestore }: Jo
       )}
 
       {/* Footer */}
-      <div className="flex items-center gap-3 flex-wrap">
-        {job.posted_at && (
-          <span className="text-xs text-slate-600">
-            {new Date(job.posted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-          </span>
+      <div className="flex items-center gap-2 flex-wrap justify-end">
+        {job.ignored ? (
+          onRestore && (
+            <button
+              onClick={() => onRestore(job.id)}
+              className="text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded hover:bg-slate-800"
+            >
+              Restore
+            </button>
+          )
+        ) : (
+          onIgnore && (
+            <button
+              onClick={() => onIgnore(job.id)}
+              className="text-xs text-slate-600 hover:text-slate-400 transition-colors px-2 py-1 rounded hover:bg-slate-800"
+            >
+              Ignore
+            </button>
+          )
         )}
-        <div className="ml-auto flex items-center gap-2 flex-wrap">
-          {/* Full Analysis — unlocks after Stage 6 (STAR story) */}
-          {stageCompleted >= 6 && (
-            <AnalysisPanel jobId={job.id} profileId={job.profile_id} />
-          )}
-          {job.ignored ? (
-            onRestore && (
-              <button
-                onClick={() => onRestore(job.id)}
-                className="text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded hover:bg-slate-800"
-              >
-                Restore
-              </button>
-            )
-          ) : (
-            onIgnore && (
-              <button
-                onClick={() => onIgnore(job.id)}
-                className="text-xs text-slate-600 hover:text-slate-400 transition-colors px-2 py-1 rounded hover:bg-slate-800"
-              >
-                Ignore
-              </button>
-            )
-          )}
-          <a
-            href={isUnlocked ? job.url : undefined}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={e => !isUnlocked && e.preventDefault()}
-            title={!isUnlocked ? 'Tell us about your career aspirations to unlock job links' : undefined}
-            className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-all duration-200 ${
-              isUnlocked
-                ? 'border-amber-700/60 text-amber-400 hover:bg-amber-500 hover:border-amber-500 hover:text-slate-950'
-                : 'border-slate-700 text-slate-600 cursor-not-allowed'
-            }`}
-          >
-            View Job →
-          </a>
-        </div>
+        {stageCompleted >= 6 && (
+          <AnalysisPanel jobId={job.id} profileId={job.profile_id} />
+        )}
       </div>
     </div>
   )
