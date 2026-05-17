@@ -106,7 +106,7 @@ export default function ConstraintsForm({ profileId, onComplete }: ConstraintsFo
 
         {loading && (
           <p className="text-xs text-slate-400 text-center mt-2">
-            This searches multiple job boards — it takes a couple minutes.
+            Searching Remotive for your initial matches — this takes a minute or two.
           </p>
         )}
       </form>

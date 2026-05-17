@@ -42,7 +42,7 @@ async function extractAspiration(profileJson: string, aspirationText: string) {
 And their stated aspiration: ${aspirationText}
 
 1. Extract aspiration signals as JSON
-2. Generate 2 specific job search queries. Include seniority/level qualifiers that match the candidate's experience (e.g. "senior director", "VP", "CIO", "chief", "executive"). Do NOT generate generic queries without level context.
+2. Generate 2 job title search queries. Each must be a SHORT job title only (3-6 words max). Include seniority level (e.g. "VP", "Chief", "Director", "Senior"). No extra keywords, no OR syntax, no industry terms — just the title.
 
 Return JSON only:
 {
@@ -53,7 +53,7 @@ Return JSON only:
     "growth_direction": "unclear",
     "keywords": []
   },
-  "queries": ["query 1 with seniority", "query 2 with seniority"],
+  "queries": ["Chief AI Officer", "VP of Technology"],
   "confidence": 0.8
 }`
     }]
@@ -540,10 +540,14 @@ export async function POST(request: NextRequest) {
         signal_confidence: signal_confidence as SignalConfidence,
       }
 
+      // Adzuna's `what` param doesn't support OR syntax — take only the first title phrase
+      const sanitizeForAdzuna = (q: string) => q.split(/ OR /i)[0].trim().split(' ').slice(0, 5).join(' ')
+
       const allRawJobs: Array<ReturnType<typeof normalizeAdzunaJob> | ReturnType<typeof normalizeRemotiveJob>> = []
       for (const q of (queries as string[]).slice(0, 2)) {
+        const adzunaQ = sanitizeForAdzuna(q)
         const [adzunaJobs, remotiveJobs] = await Promise.all([
-          fetchAdzuna(q),
+          fetchAdzuna(adzunaQ),
           fetchRemotive(q),
         ])
         for (const j of adzunaJobs) allRawJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId))
