@@ -7,11 +7,16 @@ import { createClient } from '@/lib/supabase/client'
 import StageProgress from './StageProgress'
 import ProfilePanel from './ProfilePanel'
 import TotalJobsPanel from './TotalJobsPanel'
+import TierCountsPanel from './TierCountsPanel'
 import SourcesPanel from './SourcesPanel'
 import JobsList from './JobsList'
 import ResumeUpload from './ResumeUpload'
 import ConstraintsForm from './ConstraintsForm'
 import AspirationForm from './AspirationForm'
+import ValuesForm from './ValuesForm'
+import CapabilitiesForm from './CapabilitiesForm'
+import AdjacentForm from './AdjacentForm'
+import BroaderVisionPanel from './BroaderVisionPanel'
 
 interface DashboardClientProps {
   initialProfile: CareerProfile | null
@@ -30,6 +35,8 @@ export default function DashboardClient({
   const [profile, setProfile] = useState<CareerProfile | null>(initialProfile)
   const [jobs, setJobs] = useState<JobPosting[]>(initialJobs)
   const [stageLoading, setStageLoading] = useState<number | null>(null)
+  const [showResetConfirm, setShowResetConfirm] = useState(false)
+  const [resetting, setResetting] = useState(false)
 
   const supabase = createClient()
 
@@ -51,50 +58,65 @@ export default function DashboardClient({
     return data as CareerProfile | null
   }, [supabase, userId])
 
-  const handleResumeComplete = useCallback(async (updatedProfile: CareerProfile) => {
+  const handleStageComplete = useCallback(async (stage: number) => {
+    setStageLoading(stage)
+    try {
+      const updated = await refetchProfile()
+      if (updated?.id) {
+        await refetchJobs(updated.id)
+      }
+    } finally {
+      setStageLoading(null)
+    }
+  }, [refetchProfile, refetchJobs])
+
+  const handleResumeComplete = useCallback((updatedProfile: CareerProfile) => {
     setProfile(updatedProfile)
   }, [])
-
-  const handleConstraintsComplete = useCallback(async () => {
-    setStageLoading(2)
-    try {
-      const updated = await refetchProfile()
-      if (updated?.id) {
-        await refetchJobs(updated.id)
-      }
-    } finally {
-      setStageLoading(null)
-    }
-  }, [refetchProfile, refetchJobs])
-
-  const handleAspirationComplete = useCallback(async () => {
-    setStageLoading(3)
-    try {
-      const updated = await refetchProfile()
-      if (updated?.id) {
-        await refetchJobs(updated.id)
-      }
-    } finally {
-      setStageLoading(null)
-    }
-  }, [refetchProfile, refetchJobs])
 
   const handleSignOut = async () => {
     await supabase.auth.signOut()
     router.push('/')
   }
 
+  const handleReset = async () => {
+    setResetting(true)
+    try {
+      const res = await fetch('/api/reset', { method: 'POST' })
+      if (res.ok) {
+        setProfile(null)
+        setJobs([])
+        setShowResetConfirm(false)
+      }
+    } finally {
+      setResetting(false)
+    }
+  }
+
+  const handleAddToResults = useCallback((job: JobPosting) => {
+    setJobs(prev => {
+      if (prev.find(j => j.id === job.id)) return prev
+      return [{ ...job, source_type: 'main' }, ...prev]
+    })
+  }, [])
+
   const stageCompleted = profile?.stage_completed ?? 0
   const profileId = profile?.id ?? null
+
+  // Schema warning stages — any stage that had an overflow
+  const schemaWarnings = (profile?.schema_warnings || []) as Array<{ stage: number }>
+  const schemaWarningStages = schemaWarnings.map(w => w.stage)
 
   // Determine which form to show
   const showResumeUpload = stageCompleted < 1
   const showConstraints = stageCompleted >= 1 && stageCompleted < 2
   const showAspiration = stageCompleted >= 2 && stageCompleted < 3
-  const allDone = stageCompleted >= 3
+  const showValues = stageCompleted >= 3 && stageCompleted < 4
+  const showCapabilities = stageCompleted >= 4 && stageCompleted < 5
+  const showAdjacent = stageCompleted >= 5 && stageCompleted < 6
+  const allDone = stageCompleted >= 6
 
-  // Determine current stage number for the stepper
-  const currentStage = stageCompleted + 1
+  const currentStage = Math.min(stageCompleted + 1, 6)
   const completedStages = Array.from({ length: stageCompleted }, (_, i) => i + 1)
 
   return (
@@ -127,8 +149,9 @@ export default function DashboardClient({
             {/* Stage progress */}
             <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 mb-4">
               <StageProgress
-                currentStage={Math.min(currentStage, 3)}
+                currentStage={currentStage}
                 completedStages={completedStages}
+                schemaWarningStages={schemaWarningStages}
               />
             </div>
 
@@ -138,10 +161,19 @@ export default function DashboardClient({
                 <ResumeUpload profileId={profileId} onComplete={handleResumeComplete} />
               )}
               {showConstraints && profileId && (
-                <ConstraintsForm profileId={profileId} onComplete={handleConstraintsComplete} />
+                <ConstraintsForm profileId={profileId} onComplete={() => handleStageComplete(2)} />
               )}
               {showAspiration && profileId && (
-                <AspirationForm profileId={profileId} onComplete={handleAspirationComplete} />
+                <AspirationForm profileId={profileId} onComplete={() => handleStageComplete(3)} />
+              )}
+              {showValues && profileId && (
+                <ValuesForm profileId={profileId} onComplete={() => handleStageComplete(4)} />
+              )}
+              {showCapabilities && profileId && (
+                <CapabilitiesForm profileId={profileId} onComplete={() => handleStageComplete(5)} />
+              )}
+              {showAdjacent && profileId && (
+                <AdjacentForm profileId={profileId} jobs={jobs} onComplete={() => handleStageComplete(6)} />
               )}
               {allDone && (
                 <div className="text-center py-4">
@@ -151,9 +183,7 @@ export default function DashboardClient({
                     </svg>
                   </div>
                   <p className="text-slate-300 font-medium text-sm mb-1">All stages complete!</p>
-                  <p className="text-slate-500 text-xs">
-                    Phase 2 features coming soon.
-                  </p>
+                  <p className="text-slate-500 text-xs">Your full match picture is below.</p>
                 </div>
               )}
               {stageLoading !== null && (
@@ -162,10 +192,47 @@ export default function DashboardClient({
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                   </svg>
-                  <span className="text-xs">Refreshing your results...</span>
+                  <span className="text-xs">Refreshing your results…</span>
                 </div>
               )}
             </div>
+
+            {/* Reset button */}
+            {profile && (
+              <div className="mt-3">
+                {!showResetConfirm ? (
+                  <button
+                    onClick={() => setShowResetConfirm(true)}
+                    className="w-full text-xs text-slate-600 hover:text-slate-400 py-2 transition-colors"
+                  >
+                    Start over
+                  </button>
+                ) : (
+                  <div className="bg-slate-900 border border-slate-700 rounded-xl p-4 text-center space-y-3">
+                    <p className="text-xs text-slate-300">
+                      This will delete all your results and start over.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setShowResetConfirm(false)}
+                        disabled={resetting}
+                        className="flex-1 text-xs py-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleReset}
+                        disabled={resetting}
+                        className="flex-1 text-xs py-1.5 rounded-lg bg-red-900/60 border border-red-800/60 text-red-300 hover:bg-red-800/60 transition-colors disabled:opacity-50"
+                      >
+                        {resetting ? 'Resetting…' : 'Yes, reset'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Build version */}
             <div className="mt-3 text-center">
               <span className="font-mono text-xs text-slate-700">build {buildSha}</span>
@@ -174,15 +241,19 @@ export default function DashboardClient({
 
           {/* Right column */}
           <div className="flex-1 min-w-0 space-y-4">
-            {/* Top row: Profile + Total Jobs */}
-            <div className="grid grid-cols-2 gap-4">
+            {/* Top row: Profile + Total Jobs + Tier Counts */}
+            <div className="grid grid-cols-3 gap-4">
               <ProfilePanel
                 profile={profile}
                 active={stageCompleted >= 1}
               />
               <TotalJobsPanel
-                count={jobs.length}
+                count={jobs.filter(j => j.source_type === 'main').length}
                 active={jobs.length > 0}
+              />
+              <TierCountsPanel
+                jobs={jobs}
+                active={stageCompleted >= 4}
               />
             </div>
 
@@ -208,8 +279,20 @@ export default function DashboardClient({
                   </div>
                 )}
               </div>
-              <JobsList jobs={jobs} stageCompleted={stageCompleted} />
+              <JobsList
+                jobs={jobs.filter(j => j.source_type === 'main')}
+                stageCompleted={stageCompleted}
+              />
             </div>
+
+            {/* Broader Vision panel (Stage 6+) */}
+            {profileId && (
+              <BroaderVisionPanel
+                profileId={profileId}
+                active={stageCompleted >= 6}
+                onAddToResults={handleAddToResults}
+              />
+            )}
           </div>
         </div>
       </div>
