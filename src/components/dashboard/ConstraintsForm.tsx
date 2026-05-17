@@ -5,9 +5,10 @@ import { useState } from 'react'
 interface ConstraintsFormProps {
   profileId: string
   onComplete: () => void
+  onLoadingChange?: (loading: boolean) => void
 }
 
-export default function ConstraintsForm({ profileId, onComplete }: ConstraintsFormProps) {
+export default function ConstraintsForm({ profileId, onComplete, onLoadingChange }: ConstraintsFormProps) {
   const [answer, setAnswer] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -18,6 +19,7 @@ export default function ConstraintsForm({ profileId, onComplete }: ConstraintsFo
     e.preventDefault()
     if (!isValid) return
     setLoading(true)
+    onLoadingChange?.(true)
     setError(null)
 
     try {
@@ -39,6 +41,7 @@ export default function ConstraintsForm({ profileId, onComplete }: ConstraintsFo
       setError('Network error. Please try again.')
     } finally {
       setLoading(false)
+      onLoadingChange?.(false)
     }
   }
 

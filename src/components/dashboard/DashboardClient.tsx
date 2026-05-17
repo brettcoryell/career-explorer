@@ -205,7 +205,11 @@ export default function DashboardClient({
                 <ResumeUpload profileId={profileId} onComplete={handleResumeComplete} />
               )}
               {showConstraints && profileId && (
-                <ConstraintsForm profileId={profileId} onComplete={() => handleStageComplete(2)} />
+                <ConstraintsForm
+                  profileId={profileId}
+                  onComplete={() => handleStageComplete(2)}
+                  onLoadingChange={(l) => setSubmittingStage(l ? 2 : null)}
+                />
               )}
               {showAspiration && profileId && (
                 <AspirationForm
