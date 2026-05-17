@@ -252,12 +252,21 @@ async function fetchRemotive(query: string) {
 async function fetchAdzuna(query: string) {
   const appId = process.env.ADZUNA_APP_ID
   const appKey = process.env.ADZUNA_APP_KEY
-  if (!appId || !appKey) return []
+  if (!appId || !appKey) {
+    console.warn('[submit-stage] Adzuna keys missing')
+    return []
+  }
   const url = `https://api.adzuna.com/v1/api/jobs/us/search/1?app_id=${appId}&app_key=${appKey}&results_per_page=25&what=${encodeURIComponent(query)}`
+  console.log('[submit-stage] Adzuna query:', query)
   const response = await fetch(url)
-  if (!response.ok) return []
+  if (!response.ok) {
+    console.error('[submit-stage] Adzuna error', response.status, await response.text())
+    return []
+  }
   const data = await response.json()
-  return data.results || []
+  const results = data.results || []
+  console.log('[submit-stage] Adzuna results:', results.length, 'for:', query)
+  return results
 }
 
 async function fetchJSearch(query: string) {
@@ -590,10 +599,19 @@ export async function POST(request: NextRequest) {
 
       console.log('[submit-stage] Stage 4 JSearch queries:', jSearchQueries)
 
-      const allRawJobs: ReturnType<typeof normalizeJSearchJob>[] = []
+      const allRawJobs: Array<ReturnType<typeof normalizeJSearchJob> | ReturnType<typeof normalizeAdzunaJob>> = []
       for (const q of jSearchQueries) {
         const jobs = await fetchJSearch(q)
         for (const j of jobs) allRawJobs.push(normalizeJSearchJob(j as Record<string, unknown>, profileId, 'main'))
+      }
+
+      // If JSearch returned nothing (subscription inactive or error), fall back to Adzuna
+      if (allRawJobs.length === 0) {
+        console.log('[submit-stage] Stage 4 JSearch fallback → Adzuna')
+        for (const q of jSearchQueries.slice(0, 2)) {
+          const jobs = await fetchAdzuna(q)
+          for (const j of jobs) allRawJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId))
+        }
       }
 
       if (allRawJobs.length > 0) {
