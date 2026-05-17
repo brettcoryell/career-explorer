@@ -3,6 +3,7 @@ export interface SignalConfidence {
   aspiration: number
   values: number
   capabilities: number
+  star: number
   adjacent: number
   overall: number
 }
@@ -36,7 +37,14 @@ export interface PreferenceProfile {
   demonstrated_capabilities: string[]
   problem_domain: string
   differentiator: string
-  // Stage 6 — Adjacent Exploration
+  // Stage 6 — STAR Story
+  star_situation: string
+  star_action: string
+  star_result: string
+  star_skills_demonstrated: string[]
+  star_scope: string
+  star_industry_context: string
+  // Stage 7 — Adjacent Exploration
   adjacent_interest: string[]
   adjacent_rejection: string[]
   // Overflow handling
@@ -63,6 +71,11 @@ export interface JobSignals {
   estimated_level: string
 }
 
+export interface FitSignal {
+  label: string
+  detail: string
+}
+
 export interface CareerProfile {
   id: string
   user_id: string
@@ -73,6 +86,7 @@ export interface CareerProfile {
   aspiration_raw: string | null
   values_raw: string | null
   capabilities_raw: string | null
+  star_raw: string | null
   adjacent_raw: string | null
   preference_profile: Partial<PreferenceProfile>
   schema_warnings: unknown[]
@@ -99,10 +113,15 @@ export interface JobPosting {
   fit_tier: 'great' | 'good' | 'other' | null
   dedup_key: string | null
   fetched_at: string
-  fit_reasons: string[] | null
-  fit_penalties: string[] | null
+  fetched_at_stage: number | null
+  fit_reasons: FitSignal[] | null
+  fit_penalties: FitSignal[] | null
   fit_summary: string | null
+  fit_analysis: string | null
+  fit_analysis_profile_hash: string | null
+  fit_analysis_generated_at: string | null
   source_type: 'main' | 'relaxed' | 'adjacent'
+  ignored: boolean
 }
 
 export interface DashboardState {

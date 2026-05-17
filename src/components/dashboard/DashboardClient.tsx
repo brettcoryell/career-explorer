@@ -15,6 +15,7 @@ import ConstraintsForm from './ConstraintsForm'
 import AspirationForm from './AspirationForm'
 import ValuesForm from './ValuesForm'
 import CapabilitiesForm from './CapabilitiesForm'
+import StarForm from './StarForm'
 import AdjacentForm from './AdjacentForm'
 import BroaderVisionPanel from './BroaderVisionPanel'
 
@@ -38,12 +39,13 @@ export default function DashboardClient({
   const [submittingStage, setSubmittingStage] = useState<number | null>(null)
   const [showResetConfirm, setShowResetConfirm] = useState(false)
   const [resetting, setResetting] = useState(false)
-  const [ignoredIds, setIgnoredIds] = useState<Set<string>>(new Set())
+  const [navigateConfirm, setNavigateConfirm] = useState<number | null>(null)
+  const [navigating, setNavigating] = useState(false)
 
   const supabase = createClient()
 
   const refetchJobs = useCallback(async (profileId: string) => {
-    const response = await fetch(`/api/jobs?profileId=${profileId}`)
+    const response = await fetch(`/api/jobs?profileId=${profileId}&showIgnored=true`)
     if (response.ok) {
       const data = await response.json()
       setJobs(data.jobs || [])
@@ -95,26 +97,56 @@ export default function DashboardClient({
     }
   }
 
+  const handleNavigateToStage = async (stage: number) => {
+    if (!profileId) return
+    setNavigateConfirm(null)
+    setNavigating(true)
+    try {
+      const res = await fetch('/api/navigate-to-stage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stage, profileId }),
+      })
+      const data = await res.json()
+      if (res.ok) {
+        setProfile(data.profile)
+        setJobs(data.jobs || [])
+      }
+    } finally {
+      setNavigating(false)
+    }
+  }
+
   const handleAddToResults = useCallback(async (job: JobPosting) => {
     setJobs(prev => {
-      // Skip if already in main results
       if (prev.find(j => j.id === job.id && j.source_type === 'main')) return prev
-      // Promote adjacent/relaxed entry to main (remove old entry first to avoid duplicates)
       return [{ ...job, source_type: 'main' }, ...prev.filter(j => j.id !== job.id)]
     })
-    // Persist the source_type change so it survives a page refresh
     await supabase.from('job_postings').update({ source_type: 'main' }).eq('id', job.id)
   }, [supabase])
 
-  const handleIgnore = useCallback((id: string) => {
-    setIgnoredIds(prev => { const s = new Set(prev); s.add(id); return s })
+  const handleIgnore = useCallback(async (id: string) => {
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, ignored: true } : j))
+    await fetch(`/api/jobs/${id}/ignore`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ignored: true }),
+    })
+  }, [])
+
+  const handleRestore = useCallback(async (id: string) => {
+    setJobs(prev => prev.map(j => j.id === id ? { ...j, ignored: false } : j))
+    await fetch(`/api/jobs/${id}/ignore`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ignored: false }),
+    })
   }, [])
 
   const stageCompleted = profile?.stage_completed ?? 0
   const sourceErrors = ((profile?.preference_profile as Record<string, unknown>)?.source_errors as Record<string, string> | undefined) || {}
   const profileId = profile?.id ?? null
 
-  // Schema warning stages — any stage that had an overflow
   const schemaWarnings = (profile?.schema_warnings || []) as Array<{ stage: number }>
   const schemaWarningStages = schemaWarnings.map(w => w.stage)
 
@@ -124,14 +156,47 @@ export default function DashboardClient({
   const showAspiration = stageCompleted >= 2 && stageCompleted < 3
   const showValues = stageCompleted >= 3 && stageCompleted < 4
   const showCapabilities = stageCompleted >= 4 && stageCompleted < 5
-  const showAdjacent = stageCompleted >= 5 && stageCompleted < 6
-  const allDone = stageCompleted >= 6
+  const showStar = stageCompleted >= 5 && stageCompleted < 6
+  const showAdjacent = stageCompleted >= 6 && stageCompleted < 7
+  const allDone = stageCompleted >= 7
 
-  const currentStage = Math.min(stageCompleted + 1, 6)
+  const currentStage = Math.min(stageCompleted + 1, 7)
   const completedStages = Array.from({ length: stageCompleted }, (_, i) => i + 1)
+
+  const activeJobs = jobs.filter(j => j.source_type === 'main' && !j.ignored)
+  const ignoredJobs = jobs.filter(j => j.source_type === 'main' && j.ignored)
 
   return (
     <div className="min-h-screen bg-slate-950">
+      {/* Back-navigation confirm modal */}
+      {navigateConfirm !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-slate-900 border border-slate-700 rounded-2xl p-6 max-w-sm mx-4 space-y-4">
+            <h3 className="text-slate-100 font-semibold text-sm">Go back to Stage {navigateConfirm}?</h3>
+            <p className="text-slate-400 text-xs leading-relaxed">
+              This will clear your answers and job results from Stage {navigateConfirm} onward.
+              You&apos;ll need to re-answer that stage and all subsequent stages.
+            </p>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setNavigateConfirm(null)}
+                disabled={navigating}
+                className="flex-1 text-xs py-2 rounded-lg border border-slate-700 text-slate-400 hover:text-slate-200 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleNavigateToStage(navigateConfirm)}
+                disabled={navigating}
+                className="flex-1 text-xs py-2 rounded-lg bg-amber-500 text-slate-950 font-medium hover:bg-amber-400 transition-colors disabled:opacity-50"
+              >
+                {navigating ? 'Going back…' : 'Yes, go back'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="flex gap-8 items-start">
           {/* Left column - sticky sidebar */}
@@ -139,14 +204,14 @@ export default function DashboardClient({
             {/* Logo + sign out + reset */}
             <div className="mb-6">
               <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
+                <a href="/" className="flex items-center gap-2 hover:opacity-80 transition-opacity">
                   <div className="w-7 h-7 bg-amber-500 rounded-lg flex items-center justify-center">
                     <svg className="w-4 h-4 text-slate-950" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
                     </svg>
                   </div>
                   <span className="text-amber-400 font-semibold text-sm tracking-tight">Career Explorer</span>
-                </div>
+                </a>
                 <div className="flex items-center gap-3">
                   {profile && !showResetConfirm && (
                     <button
@@ -196,6 +261,7 @@ export default function DashboardClient({
                 currentStage={currentStage}
                 completedStages={completedStages}
                 schemaWarningStages={schemaWarningStages}
+                onNavigate={stageCompleted >= 2 ? (stage) => setNavigateConfirm(stage) : undefined}
               />
             </div>
 
@@ -228,8 +294,15 @@ export default function DashboardClient({
               {showCapabilities && profileId && (
                 <CapabilitiesForm profileId={profileId} onComplete={() => handleStageComplete(5)} />
               )}
+              {showStar && profileId && (
+                <StarForm
+                  profileId={profileId}
+                  onComplete={() => handleStageComplete(6)}
+                  onLoadingChange={(l) => setSubmittingStage(l ? 6 : null)}
+                />
+              )}
               {showAdjacent && profileId && (
-                <AdjacentForm profileId={profileId} jobs={jobs} onComplete={() => handleStageComplete(6)} />
+                <AdjacentForm profileId={profileId} jobs={jobs} onComplete={() => handleStageComplete(7)} />
               )}
               {allDone && (
                 <div className="text-center py-4">
@@ -281,7 +354,7 @@ export default function DashboardClient({
               </div>
             </div>
 
-            {/* Sources panel — each source on its own line */}
+            {/* Sources panel */}
             <SourcesPanel
               jobs={jobs}
               active={jobs.length > 0}
@@ -291,13 +364,13 @@ export default function DashboardClient({
               sourceErrors={sourceErrors}
             />
 
-            {/* Broader Vision panel — at top of job section */}
-            {profileId && stageCompleted >= 6 && (
+            {/* Broader Vision panel — stage 7+ */}
+            {profileId && stageCompleted >= 7 && (
               <BroaderVisionPanel
                 profileId={profileId}
-                active={stageCompleted >= 6}
+                active={stageCompleted >= 7}
                 onAddToResults={handleAddToResults}
-                ignoredIds={ignoredIds}
+                ignoredIds={new Set(ignoredJobs.map(j => j.id))}
                 onIgnore={handleIgnore}
               />
             )}
@@ -318,9 +391,11 @@ export default function DashboardClient({
                 )}
               </div>
               <JobsList
-                jobs={jobs.filter(j => j.source_type === 'main' && !ignoredIds.has(j.id))}
+                jobs={activeJobs}
+                ignoredJobs={ignoredJobs}
                 stageCompleted={stageCompleted}
                 onIgnore={handleIgnore}
+                onRestore={handleRestore}
               />
             </div>
           </div>

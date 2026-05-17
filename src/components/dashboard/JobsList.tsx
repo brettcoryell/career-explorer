@@ -1,12 +1,15 @@
 'use client'
 
+import { useState } from 'react'
 import { JobPosting } from '@/lib/types'
 import JobCard from './JobCard'
 
 interface JobsListProps {
   jobs: JobPosting[]
+  ignoredJobs?: JobPosting[]
   stageCompleted: number
   onIgnore?: (id: string) => void
+  onRestore?: (id: string) => void
 }
 
 const TIER_CONFIG = {
@@ -33,8 +36,10 @@ const TIER_CONFIG = {
   },
 } as const
 
-export default function JobsList({ jobs, stageCompleted, onIgnore }: JobsListProps) {
-  if (jobs.length === 0) {
+export default function JobsList({ jobs, ignoredJobs = [], stageCompleted, onIgnore, onRestore }: JobsListProps) {
+  const [showIgnored, setShowIgnored] = useState(false)
+
+  if (jobs.length === 0 && ignoredJobs.length === 0) {
     return (
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-12 text-center">
         <div className="w-12 h-12 bg-slate-800 rounded-xl flex items-center justify-center mx-auto mb-4">
@@ -65,7 +70,6 @@ export default function JobsList({ jobs, stageCompleted, onIgnore }: JobsListPro
 
         return (
           <div key={tier}>
-            {/* Tier header */}
             <div className={`flex items-center gap-3 mb-4 pb-3 border-b ${config.borderColor}`}>
               <div className={`w-2.5 h-2.5 rounded-full ${config.dotColor}`} />
               <h2 className={`font-semibold ${config.headerColor}`}>
@@ -76,20 +80,51 @@ export default function JobsList({ jobs, stageCompleted, onIgnore }: JobsListPro
               </span>
             </div>
 
-            {/* Job cards */}
             <div className="grid gap-3">
               {displayJobs.map(job => (
                 <JobCard
                   key={job.id}
                   job={job}
                   stageCompleted={stageCompleted}
-                  onIgnore={onIgnore ? () => onIgnore(job.id) : undefined}
+                  onIgnore={onIgnore}
+                  onRestore={onRestore}
                 />
               ))}
             </div>
           </div>
         )
       })}
+
+      {/* Ignored jobs toggle */}
+      {ignoredJobs.length > 0 && (
+        <div>
+          <button
+            onClick={() => setShowIgnored(s => !s)}
+            className="text-xs text-slate-500 hover:text-slate-300 transition-colors flex items-center gap-1.5 mb-3"
+          >
+            <svg
+              className={`w-3.5 h-3.5 transition-transform ${showIgnored ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+            </svg>
+            {showIgnored ? 'Hide' : 'Show'} {ignoredJobs.length} ignored {ignoredJobs.length === 1 ? 'job' : 'jobs'}
+          </button>
+          {showIgnored && (
+            <div className="grid gap-3">
+              {ignoredJobs.map(job => (
+                <JobCard
+                  key={job.id}
+                  job={job}
+                  stageCompleted={stageCompleted}
+                  onIgnore={onIgnore}
+                  onRestore={onRestore}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 }

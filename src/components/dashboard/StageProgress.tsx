@@ -4,6 +4,7 @@ interface StageProgressProps {
   currentStage: number
   completedStages: number[]
   schemaWarningStages?: number[]
+  onNavigate?: (stage: number) => void
 }
 
 const STAGES = [
@@ -12,13 +13,15 @@ const STAGES = [
   { number: 3, label: 'Career Aspirations' },
   { number: 4, label: 'Values & Culture' },
   { number: 5, label: 'Skills Match' },
-  { number: 6, label: 'Broader Exploration' },
+  { number: 6, label: 'Your Story' },
+  { number: 7, label: 'Broader Exploration' },
 ]
 
 export default function StageProgress({
   currentStage,
   completedStages,
   schemaWarningStages = [],
+  onNavigate,
 }: StageProgressProps) {
   return (
     <nav aria-label="Progress" className="py-2">
@@ -28,6 +31,7 @@ export default function StageProgress({
           const isCurrent = currentStage === stage.number
           const isFuture = !isCompleted && !isCurrent
           const hasWarning = schemaWarningStages.includes(stage.number)
+          const isClickable = isCompleted && onNavigate
 
           return (
             <li key={stage.number} className="relative">
@@ -35,9 +39,13 @@ export default function StageProgress({
                 <div className="absolute left-[19px] top-[36px] w-px h-[calc(100%+4px)] bg-slate-800" />
               )}
 
-              <div className={`flex items-start gap-3 py-2 px-3 rounded-lg transition-all duration-300 ${
-                isCurrent ? 'bg-amber-500/5' : ''
-              } ${isFuture ? 'opacity-40' : ''}`}>
+              <div
+                className={`flex items-start gap-3 py-2 px-3 rounded-lg transition-all duration-300 ${
+                  isCurrent ? 'bg-amber-500/5' : ''
+                } ${isFuture ? 'opacity-40' : ''} ${isClickable ? 'cursor-pointer hover:bg-slate-800/60' : ''}`}
+                onClick={isClickable ? () => onNavigate(stage.number) : undefined}
+                title={isClickable ? `Go back to Stage ${stage.number}` : undefined}
+              >
                 {/* Circle indicator */}
                 <div className="relative shrink-0 mt-0.5">
                   {isCompleted ? (
@@ -71,7 +79,9 @@ export default function StageProgress({
                       {stage.label}
                     </p>
                     {isCompleted && (
-                      <p className="text-xs text-slate-500 mt-0.5">Complete</p>
+                      <p className="text-xs text-slate-500 mt-0.5">
+                        {isClickable ? 'Complete · click to edit' : 'Complete'}
+                      </p>
                     )}
                   </div>
                   {hasWarning && (

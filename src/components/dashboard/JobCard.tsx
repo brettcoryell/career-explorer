@@ -1,12 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { JobPosting } from '@/lib/types'
+import { FitSignal, JobPosting } from '@/lib/types'
 
 interface JobCardProps {
   job: JobPosting
   stageCompleted: number
-  onIgnore?: () => void
+  onIgnore?: (id: string) => void
+  onRestore?: (id: string) => void
 }
 
 const SOURCE_STYLES: Record<string, { label: string; bg: string; text: string }> = {
@@ -41,13 +42,139 @@ function ScoreBadge({ score, tier }: { score: number; tier: 'great' | 'good' | '
   )
 }
 
-export default function JobCard({ job, stageCompleted, onIgnore }: JobCardProps) {
+function FitChip({ signal, positive }: { signal: FitSignal; positive: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative inline-block">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+          positive
+            ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900/50 hover:bg-emerald-900/50'
+            : 'bg-red-950/40 text-red-400 border-red-900/50 hover:bg-red-900/50'
+        }`}
+      >
+        {positive ? '✓' : '✗'} {signal.label}
+      </button>
+      {open && signal.detail && (
+        <div className="absolute z-10 bottom-full mb-1 left-0 w-56 bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-300 shadow-xl leading-relaxed">
+          {signal.detail}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function AnalysisPanel({ jobId, profileId, stageCompleted }: { jobId: string; profileId: string; stageCompleted: number }) {
+  const [open, setOpen] = useState(false)
+  const [analysis, setAnalysis] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const isDisabled = stageCompleted < 5
+
+  const handleClick = async () => {
+    if (isDisabled) return
+    if (!open) {
+      setOpen(true)
+      if (!analysis) {
+        setLoading(true)
+        setError(null)
+        try {
+          const res = await fetch(`/api/jobs/${jobId}/analyze`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ profileId }),
+          })
+          const data = await res.json()
+          if (!res.ok) throw new Error(data.error || 'Failed to analyze')
+          setAnalysis(data.analysis)
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Something went wrong')
+        } finally {
+          setLoading(false)
+        }
+      }
+    } else {
+      setOpen(false)
+    }
+  }
+
+  const label = stageCompleted >= 6 ? 'Full Analysis' : 'Analyze Fit'
+
+  return (
+    <div>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={isDisabled}
+        title={isDisabled ? 'Complete the Skills Match stage to unlock fit analysis' : undefined}
+        className={`text-xs font-medium px-3 py-1.5 rounded-lg border transition-all duration-200 ${
+          isDisabled
+            ? 'border-slate-700 text-slate-600 cursor-not-allowed'
+            : open
+            ? 'border-amber-600 bg-amber-500/10 text-amber-400'
+            : 'border-slate-600 text-slate-400 hover:border-amber-600 hover:text-amber-400'
+        }`}
+      >
+        {open ? '▲ ' : '▼ '}{label}
+      </button>
+      {open && (
+        <div className="mt-3 border border-slate-700 rounded-lg p-4 bg-slate-800/60">
+          {loading && (
+            <div className="flex items-center gap-2 text-slate-400 text-xs">
+              <svg className="animate-spin w-4 h-4 text-amber-400" viewBox="0 0 24 24" fill="none">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+              </svg>
+              Generating honest assessment…
+            </div>
+          )}
+          {error && <p className="text-xs text-red-400">{error}</p>}
+          {analysis && (
+            <div className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap prose-invert">
+              {analysis}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default function JobCard({ job, stageCompleted, onIgnore, onRestore }: JobCardProps) {
   const [expanded, setExpanded] = useState(false)
   const isUnlocked = stageCompleted >= 3
   const showScoreBadge = stageCompleted >= 4 && job.fit_score !== null && job.fit_tier !== null
   const showDescription = stageCompleted >= 5
   const sourceStyle = SOURCE_STYLES[job.source] || SOURCE_STYLES.remotive
   const salary = formatSalary(job.salary_min, job.salary_max)
+
+  if (job.ignored) {
+    return (
+      <div className="relative bg-slate-900/60 border border-slate-800/60 rounded-xl p-4 opacity-50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className={`text-xs font-medium px-2 py-0.5 rounded-full border ${sourceStyle.bg} ${sourceStyle.text}`}>
+              {sourceStyle.label}
+            </span>
+            <span className="text-xs text-slate-600 border border-slate-700 rounded-full px-2 py-0.5">Ignored</span>
+          </div>
+          {onRestore && (
+            <button
+              onClick={() => onRestore(job.id)}
+              className="text-xs text-slate-500 hover:text-slate-300 transition-colors px-2 py-1 rounded hover:bg-slate-800"
+            >
+              Restore
+            </button>
+          )}
+        </div>
+        <p className="text-sm text-slate-600 mt-2">{isUnlocked ? job.title : '••••••••'}</p>
+        {job.company && <p className="text-xs text-slate-700 mt-0.5">{job.company}</p>}
+      </div>
+    )
+  }
 
   return (
     <div className="relative bg-slate-900 border border-slate-800 rounded-xl p-5 hover:border-slate-700 transition-all duration-200 group">
@@ -123,18 +250,14 @@ export default function JobCard({ job, stageCompleted, onIgnore }: JobCardProps)
         </p>
       )}
 
-      {/* Fit reasons / penalties (Stage 5+) */}
+      {/* Fit reasons / penalties (Stage 5+) — clickable chips with popovers */}
       {showDescription && (job.fit_reasons?.length || job.fit_penalties?.length) && (
         <div className="flex flex-wrap gap-1.5 mb-3">
           {(job.fit_reasons || []).map((r, i) => (
-            <span key={i} className="text-xs bg-emerald-950/40 text-emerald-400 border border-emerald-900/50 px-2 py-0.5 rounded-full">
-              ✓ {r}
-            </span>
+            <FitChip key={i} signal={r} positive={true} />
           ))}
           {(job.fit_penalties || []).map((p, i) => (
-            <span key={i} className="text-xs bg-red-950/40 text-red-400 border border-red-900/50 px-2 py-0.5 rounded-full">
-              ✗ {p}
-            </span>
+            <FitChip key={i} signal={p} positive={false} />
           ))}
         </div>
       )}
@@ -163,16 +286,20 @@ export default function JobCard({ job, stageCompleted, onIgnore }: JobCardProps)
       )}
 
       {/* Footer */}
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 flex-wrap">
         {job.posted_at && (
           <span className="text-xs text-slate-600">
             {new Date(job.posted_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
           </span>
         )}
-        <div className="ml-auto flex items-center gap-2">
+        <div className="ml-auto flex items-center gap-2 flex-wrap">
+          {/* Analyze Fit (Stage 5+) */}
+          {stageCompleted >= 4 && (
+            <AnalysisPanel jobId={job.id} profileId={job.profile_id} stageCompleted={stageCompleted} />
+          )}
           {onIgnore && (
             <button
-              onClick={onIgnore}
+              onClick={() => onIgnore(job.id)}
               className="text-xs text-slate-600 hover:text-slate-400 transition-colors px-2 py-1 rounded hover:bg-slate-800"
             >
               Ignore

@@ -20,6 +20,7 @@ export async function POST() {
     // Delete dependent rows first, then the profile
     await supabase.from('score_events').delete().eq('profile_id', profileId)
     await supabase.from('job_postings').delete().eq('profile_id', profileId)
+    await supabase.from('error_log').delete().eq('profile_id', profileId)
     await supabase.from('career_profiles').delete().eq('id', profileId)
 
     return NextResponse.json({ success: true })

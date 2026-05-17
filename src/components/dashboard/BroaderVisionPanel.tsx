@@ -130,7 +130,7 @@ export default function BroaderVisionPanel({ profileId, active, onAddToResults, 
         <h3 className="text-xs font-semibold uppercase tracking-wider text-slate-600 mb-2">
           Broader Vision
         </h3>
-        <p className="text-xs text-slate-700">Unlocks after Stage 6</p>
+        <p className="text-xs text-slate-700">Unlocks after Stage 7</p>
       </div>
     )
   }

@@ -5,6 +5,7 @@ export const maxDuration = 60
 import Anthropic from '@anthropic-ai/sdk'
 import { scoreJob, assignTier, makeDeduKey } from '@/lib/scoring'
 import { JobSignals, PreferenceProfile, SignalConfidence } from '@/lib/types'
+import { logError } from '@/lib/logError'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -120,6 +121,43 @@ Extract demonstrated capabilities. Return JSON only:
 demonstrated_capabilities: concrete skills/domains, e.g. ["distributed systems", "team leadership", "cost optimization"]
 problem_domain: primary domain the hardest problem was in
 differentiator: 1 sentence on what made them the right person`
+    }]
+  })
+  const raw = (response.content[0] as { type: string; text: string }).text
+  const match = raw.match(/\{[\s\S]*\}/)
+  return match ? JSON.parse(match[0]) : {}
+}
+
+async function extractStar(starText: string) {
+  const response = await anthropic.messages.create({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 768,
+    messages: [{
+      role: 'user',
+      content: `Extract a STAR story from this job seeker's accomplishment narrative.
+
+Answer: ${starText}
+
+Return JSON only:
+{
+  "star_situation": "",
+  "star_action": "",
+  "star_result": "",
+  "star_skills_demonstrated": [],
+  "star_scope": "",
+  "star_industry_context": "",
+  "unstructured_notes": "",
+  "schema_fit_warning": false,
+  "schema_fit_details": "",
+  "confidence": 0.8
+}
+
+star_situation: 1-2 sentences on the challenge or context
+star_action: 1-2 sentences on what they specifically did
+star_result: 1-2 sentences on measurable outcome or impact
+star_skills_demonstrated: concrete skills shown, e.g. ["stakeholder management", "systems design", "executive communication"]
+star_scope: scale — team size, budget, users affected, revenue impact, etc.
+star_industry_context: industry or domain this accomplishment occurred in`
     }]
   })
   const raw = (response.content[0] as { type: string; text: string }).text
@@ -292,7 +330,7 @@ async function fetchJSearch(query: string): Promise<{ jobs: Record<string, unkno
 
 // ── Job normalizers ──────────────────────────────────────────────────────────
 
-function normalizeRemotiveJob(job: Record<string, unknown>, profileId: string) {
+function normalizeRemotiveJob(job: Record<string, unknown>, profileId: string, fetchedAtStage: number) {
   const title = (job.title as string) || ''
   const company = (job.company_name as string) || ''
   const location = 'Remote'
@@ -314,10 +352,11 @@ function normalizeRemotiveJob(job: Record<string, unknown>, profileId: string) {
     fit_score: null,
     fit_tier: null,
     source_type: 'main',
+    fetched_at_stage: fetchedAtStage,
   }
 }
 
-function normalizeAdzunaJob(job: Record<string, unknown>, profileId: string, sourceType = 'main') {
+function normalizeAdzunaJob(job: Record<string, unknown>, profileId: string, sourceType = 'main', fetchedAtStage = 3) {
   const title = (job.title as string) || ''
   const company = ((job.company as Record<string, unknown>)?.display_name as string) || ''
   const location = ((job.location as Record<string, unknown>)?.display_name as string) || ''
@@ -340,10 +379,11 @@ function normalizeAdzunaJob(job: Record<string, unknown>, profileId: string, sou
     fit_score: null,
     fit_tier: null,
     source_type: sourceType,
+    fetched_at_stage: fetchedAtStage,
   }
 }
 
-function normalizeJSearchJob(job: Record<string, unknown>, profileId: string, sourceType = 'main') {
+function normalizeJSearchJob(job: Record<string, unknown>, profileId: string, sourceType = 'main', fetchedAtStage = 4) {
   const title = (job.job_title as string) || ''
   const company = (job.employer_name as string) || ''
   const location = [job.job_city, job.job_state, job.job_country]
@@ -368,6 +408,7 @@ function normalizeJSearchJob(job: Record<string, unknown>, profileId: string, so
     fit_score: null,
     fit_tier: null,
     source_type: sourceType,
+    fetched_at_stage: fetchedAtStage,
   }
 }
 
@@ -412,14 +453,9 @@ async function rescoreAllJobs(
     .eq('profile_id', profileId)
 
   const scoreEventRows: Array<{
-    profile_id: string
-    job_id: string
-    stage_scored: number
-    raw_score: number
-    normalized_score: number
-    fit_tier: string
-    signals_fired: string[]
-    penalties_fired: string[]
+    profile_id: string; job_id: string; stage_scored: number
+    raw_score: number; normalized_score: number; fit_tier: string
+    signals_fired: string[]; penalties_fired: string[]
     confidence_snapshot: Partial<SignalConfidence>
   }> = []
 
@@ -442,8 +478,8 @@ async function rescoreAllJobs(
       raw_score: raw,
       normalized_score: normalized,
       fit_tier: tier,
-      signals_fired: reasons,
-      penalties_fired: penalties,
+      signals_fired: reasons.map(r => r.label),
+      penalties_fired: penalties.map(p => p.label),
       confidence_snapshot: updatedPref.signal_confidence || {},
     })
   }
@@ -501,7 +537,7 @@ export async function POST(request: NextRequest) {
       const allRawJobs: ReturnType<typeof normalizeRemotiveJob>[] = []
       for (const q of queries) {
         const jobs = await fetchRemotive(q)
-        for (const j of jobs) allRawJobs.push(normalizeRemotiveJob(j, profileId))
+        for (const j of jobs) allRawJobs.push(normalizeRemotiveJob(j, profileId, 2))
       }
 
       if (allRawJobs.length > 0) {
@@ -553,8 +589,8 @@ export async function POST(request: NextRequest) {
           fetchAdzuna(adzunaQ),
           fetchRemotive(q),
         ])
-        for (const j of adzunaJobs) allRawJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId))
-        for (const j of remotiveJobs) allRawJobs.push(normalizeRemotiveJob(j, profileId))
+        for (const j of adzunaJobs) allRawJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId, 'main', 3))
+        for (const j of remotiveJobs) allRawJobs.push(normalizeRemotiveJob(j, profileId, 3))
       }
 
       if (allRawJobs.length > 0) {
@@ -611,7 +647,7 @@ export async function POST(request: NextRequest) {
       for (const q of jSearchQueries) {
         const { jobs, hadError } = await fetchJSearch(q)
         if (hadError) jSearchHadError = true
-        for (const j of jobs) allRawJobs.push(normalizeJSearchJob(j, profileId, 'main'))
+        for (const j of jobs) allRawJobs.push(normalizeJSearchJob(j, profileId, 'main', 4))
       }
 
       // If JSearch returned nothing (subscription inactive or error), fall back to Adzuna
@@ -619,7 +655,7 @@ export async function POST(request: NextRequest) {
         console.log('[submit-stage] Stage 4 JSearch fallback → Adzuna')
         for (const q of jSearchQueries.slice(0, 2)) {
           const jobs = await fetchAdzuna(q)
-          for (const j of jobs) allRawJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId))
+          for (const j of jobs) allRawJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId, 'main', 4))
         }
       }
 
@@ -716,9 +752,63 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: true, stage: 5, schemaWarning })
     }
 
-    // ── Stage 6: Adjacent exploration ────────────────────────────────────────
+    // ── Stage 6: STAR story ───────────────────────────────────────────────────
     if (stage === 6) {
-      // Get top Great-tiered job titles for the prompt context
+      const extracted = await extractStar(answer)
+      const { confidence: rawConf, ...starSignals } = extracted
+
+      const prevConf: Partial<SignalConfidence> = profile.preference_profile?.signal_confidence || {}
+      const signal_confidence: Partial<SignalConfidence> = {
+        ...prevConf,
+        star: rawConf ?? 0.5,
+      }
+
+      const updatedPref: Partial<PreferenceProfile> = {
+        ...(profile.preference_profile || {}),
+        ...starSignals,
+        signal_confidence: signal_confidence as SignalConfidence,
+      }
+
+      await rescoreAllJobs(supabase, profileId, updatedPref, 6)
+
+      // Regenerate fit summaries with STAR context
+      const { data: allJobsForSummary } = await supabase
+        .from('job_postings')
+        .select('id, title, description')
+        .eq('profile_id', profileId)
+        .eq('source_type', 'main')
+
+      if (allJobsForSummary && allJobsForSummary.length > 0) {
+        for (let i = 0; i < allJobsForSummary.length; i += 20) {
+          const batch = allJobsForSummary.slice(i, i + 20)
+          const summaries = await generateFitSummaries(batch, updatedPref)
+          for (const [jobId, summary] of Object.entries(summaries)) {
+            await supabase.from('job_postings').update({ fit_summary: summary }).eq('id', jobId)
+          }
+        }
+      }
+
+      const schemaWarning = !!starSignals.schema_fit_warning
+      const profileUpdate: Record<string, unknown> = {
+        star_raw: answer,
+        preference_profile: updatedPref,
+        stage_completed: Math.max(profile.stage_completed, 6),
+        updated_at: new Date().toISOString(),
+      }
+      if (schemaWarning) {
+        profileUpdate.schema_warnings = [
+          ...(profile.schema_warnings || []),
+          { stage: 6, details: starSignals.schema_fit_details || '' },
+        ]
+      }
+
+      await supabase.from('career_profiles').update(profileUpdate).eq('id', profileId)
+
+      return NextResponse.json({ success: true, stage: 6, schemaWarning })
+    }
+
+    // ── Stage 7: Adjacent exploration ─────────────────────────────────────────
+    if (stage === 7) {
       const { data: greatJobs } = await supabase
         .from('job_postings')
         .select('title')
@@ -744,27 +834,21 @@ export async function POST(request: NextRequest) {
         signal_confidence: signal_confidence as SignalConfidence,
       }
 
-      // JSearch re-query with adjacent terms → source_type='adjacent'
-      // Falls back to Adzuna when JSearch is unavailable (403)
-      const sanitizeForAdzuna6 = (q: string) => q.split(/ OR /i)[0].trim().split(' ').slice(0, 5).join(' ')
+      const sanitizeForAdzuna7 = (q: string) => q.split(/ OR /i)[0].trim().split(' ').slice(0, 5).join(' ')
       const adjTerms = (searchTerms as string[]).slice(0, 3)
-      console.log('[submit-stage] Stage 6 adjacent search terms:', adjTerms)
+      console.log('[submit-stage] Stage 7 adjacent search terms:', adjTerms)
 
       const allAdjacentJobs: Array<ReturnType<typeof normalizeJSearchJob> | ReturnType<typeof normalizeAdzunaJob>> = []
       for (const term of adjTerms) {
         const { jobs } = await fetchJSearch(term)
-        for (const j of jobs) {
-          allAdjacentJobs.push(normalizeJSearchJob(j, profileId, 'adjacent'))
-        }
+        for (const j of jobs) allAdjacentJobs.push(normalizeJSearchJob(j, profileId, 'adjacent', 7))
       }
 
       if (allAdjacentJobs.length === 0) {
-        console.log('[submit-stage] Stage 6 JSearch fallback → Adzuna for adjacent')
+        console.log('[submit-stage] Stage 7 JSearch fallback → Adzuna for adjacent')
         for (const term of adjTerms.slice(0, 2)) {
-          const jobs = await fetchAdzuna(sanitizeForAdzuna6(term))
-          for (const j of jobs) {
-            allAdjacentJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId, 'adjacent'))
-          }
+          const jobs = await fetchAdzuna(sanitizeForAdzuna7(term))
+          for (const j of jobs) allAdjacentJobs.push(normalizeAdzunaJob(j as Record<string, unknown>, profileId, 'adjacent', 7))
         }
       }
 
@@ -774,26 +858,29 @@ export async function POST(request: NextRequest) {
           .upsert(allAdjacentJobs, { onConflict: 'profile_id,dedup_key', ignoreDuplicates: true })
       }
 
-      // Extract signals for adjacent jobs, then score them
       await extractAndUpdateSignals(supabase, profileId)
-      await rescoreAllJobs(supabase, profileId, updatedPref, 6)
+      await rescoreAllJobs(supabase, profileId, updatedPref, 7)
 
       await supabase
         .from('career_profiles')
         .update({
           adjacent_raw: answer,
           preference_profile: updatedPref,
-          stage_completed: Math.max(profile.stage_completed, 6),
+          stage_completed: Math.max(profile.stage_completed, 7),
           updated_at: new Date().toISOString(),
         })
         .eq('id', profileId)
 
-      return NextResponse.json({ success: true, stage: 6 })
+      return NextResponse.json({ success: true, stage: 7 })
     }
 
     return NextResponse.json({ error: 'Invalid stage' }, { status: 400 })
   } catch (err) {
     console.error('[submit-stage]', err)
+    await logError({
+      error_message: err instanceof Error ? err.message : 'Internal server error',
+      source: 'submit-stage',
+    })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 }
