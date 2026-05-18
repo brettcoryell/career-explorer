@@ -450,6 +450,7 @@ export default function DashboardClient({
               stageCompleted={stageCompleted}
               loading={stageLoading !== null}
               submittingStage={submittingStage}
+              refreshing={refreshing}
               sourceErrors={sourceErrors}
             />
 

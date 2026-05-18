@@ -8,6 +8,7 @@ interface SourcesPanelProps {
   stageCompleted: number
   loading?: boolean
   submittingStage?: number | null
+  refreshing?: boolean
   sourceErrors?: Record<string, string>
 }
 
@@ -47,7 +48,7 @@ const SOURCE_CONFIG = [
   },
 ]
 
-export default function SourcesPanel({ jobs, active, stageCompleted, loading, submittingStage, sourceErrors }: SourcesPanelProps) {
+export default function SourcesPanel({ jobs, active, stageCompleted, loading, submittingStage, refreshing, sourceErrors }: SourcesPanelProps) {
   return (
     <div className={`rounded-xl border p-5 transition-all duration-400 ${
       active
@@ -63,7 +64,7 @@ export default function SourcesPanel({ jobs, active, stageCompleted, loading, su
             Job Sources
           </h3>
         </div>
-        {loading && (
+        {(loading || refreshing) && (
           <div className="flex items-center gap-1.5">
             <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
             <div className="w-1.5 h-1.5 bg-amber-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
@@ -78,7 +79,7 @@ export default function SourcesPanel({ jobs, active, stageCompleted, loading, su
           const hasReached = stageCompleted >= src.activatesAt
           const isActive = active && hasReached
           const hasJobs = count > 0
-          const isRowLoading = submittingStage === src.loadingAtStage
+          const isRowLoading = submittingStage === src.loadingAtStage || (!!refreshing && hasReached)
           const hasError = !!(sourceErrors?.[src.key])
 
           return (
@@ -135,7 +136,7 @@ export default function SourcesPanel({ jobs, active, stageCompleted, loading, su
           )
         })}
 
-        {loading && (
+        {(loading || refreshing) && (
           <div className="flex items-center gap-2 bg-amber-950/30 border border-amber-800/40 rounded-lg px-3 py-2.5">
             <svg className="animate-spin w-3.5 h-3.5 text-amber-400 shrink-0" viewBox="0 0 24 24" fill="none">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
