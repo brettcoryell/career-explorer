@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 import { createHash } from 'crypto'
 import { PreferenceProfile } from '@/lib/types'
+import { logError } from '@/lib/logError'
 
 export const maxDuration = 60
 
@@ -105,6 +106,7 @@ Write as if you are a trusted advisor who will be held accountable for this advi
 
     return NextResponse.json({ analysis, cached: false })
   } catch (err) {
+    await logError({ error_message: err instanceof Error ? err.message : String(err), source: 'analyze' })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 }

@@ -3,6 +3,7 @@ import { createServiceClient } from '@/lib/supabase/server'
 import Anthropic from '@anthropic-ai/sdk'
 // @ts-expect-error pdf-parse lacks type declarations
 import pdfParse from 'pdf-parse/lib/pdf-parse.js'
+import { logError } from '@/lib/logError'
 
 const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
@@ -68,7 +69,7 @@ ${resumeText.slice(0, 8000)}`
 
     return NextResponse.json({ profile, extractedProfile })
   } catch (err) {
-    console.error('[upload-resume]', err)
+    await logError({ error_message: err instanceof Error ? err.message : String(err), source: 'upload-resume' })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 }

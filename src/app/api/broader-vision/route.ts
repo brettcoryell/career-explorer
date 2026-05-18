@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { scoreJob, assignTier } from '@/lib/scoring'
 import { JobSignals, PreferenceProfile, SignalConfidence } from '@/lib/types'
+import { logError } from '@/lib/logError'
 
 // Temporarily zero one constraint's confidence and re-score all main jobs.
 // Returns the normalized score delta per job.
@@ -142,7 +143,7 @@ export async function GET(request: NextRequest) {
       adjacent: adjacentJobs || [],
     })
   } catch (err) {
-    console.error('[broader-vision]', err)
+    await logError({ error_message: err instanceof Error ? err.message : String(err), source: 'broader-vision' })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 }

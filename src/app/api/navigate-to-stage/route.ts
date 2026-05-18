@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/lib/supabase/server'
 import { PreferenceProfile } from '@/lib/types'
+import { logError } from '@/lib/logError'
 
 const STAGE_PROFILE_FIELDS: Record<number, Array<keyof PreferenceProfile>> = {
   2: ['excluded_industries', 'excluded_company_types', 'excluded_locations', 'remote_required', 'excluded_keywords',
@@ -109,6 +110,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ profile: updatedProfile, jobs: updatedJobs || [] })
   } catch (err) {
+    await logError({ error_message: err instanceof Error ? err.message : String(err), source: 'navigate-to-stage' })
     return NextResponse.json(
       { error: err instanceof Error ? err.message : 'Internal server error' },
       { status: 500 }
