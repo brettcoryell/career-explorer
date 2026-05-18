@@ -52,7 +52,7 @@ export default async function AdminPage({
   type SignalRow = { label: string; count: number }
   let distribution: { bucket: number; count: number }[] = []
   let byStage: ByStageRow[] = []
-  let tierCounts = { great: 0, good: 0, other: 0 }
+  const tierCounts = { great: 0, good: 0, other: 0 }
   let topSignals: SignalRow[] = []
   let topPenalties: SignalRow[] = []
 
